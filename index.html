@@ -10,7 +10,7 @@
   </head>
   <body>
     <div class="container">
-      <h2 class="title">最強になりたい四目並べAI</h2>
+      <h2 class="title">最強のコネクトフォーAI</h2>
       <div class="header grid">
         <button id="pos-0-button" class="pos-button" pys-onclick="lambda e: cell_click(0)"></button>
         <button id="pos-1-button" class="pos-button" pys-onclick="lambda e: cell_click(1)"></button>
@@ -35,6 +35,7 @@ for (i=0; i<42; i++) document.write(`<div class="cell">
     </div>
 <py-script>
 import numpy as np
+import copy
 MARKS = {0: 'OO', 1: 'XX'}
   
 def update_cells(state):
@@ -133,58 +134,108 @@ class Board:
                 moves.append(idx)
         return moves
 
-class BetterPlayer:
-    def __init__(self,player):
+def play_out(board,player):
+    opp = (player + 1) % 2
+    if board.is_win(player):
+        return 1
+    elif board.is_end():
+        return 0
+    elif board.is_win(opp):
+        return -1
+    board.move(np.random.choice(board.valid_moves()))
+    return - play_out(board,opp)                            
+                            
+class Node:
+    def __init__(self,board,player):
+        self.board = board
         self.player = player
         self.opp = (player + 1) % 2
+        self.w = 0
+        self.n = 0
+        self.child_nodes = None
+    
+    def evaluate(self):
+        if self.board.is_win(self.player):
+            value = -1
+            self.w += value
+            self.n += 1
+            return value
+        elif self.board.is_win(self.opp):
+            value = 1
+            self.w += value
+            self.n += 1
+            return value
+        elif self.board.is_end():
+            value = 0
+            self.w += value
+            self.n += 1
+            return value
+
+        if not self.child_nodes:
+            board_copy = copy.deepcopy(self.board)
+            value = - play_out(board_copy,self.player)
+            self.w += value
+            self.n += 1
+
+            if self.n == 10:
+                self.expand()
+            return value
+
+        else:
+            value = - self.next_child_node().evaluate()
+            self.w += value
+            self.n += 1
+            return value
+
+    def expand(self):
+        moves = self.board.valid_moves()
+        self.child_nodes = []
+        for move in moves:
+            board_copy = copy.deepcopy(self.board)
+            board_copy.move(move)
+            self.child_nodes.append(Node(board_copy,self.opp))
+
+    def next_child_node(self):
+        for child_node in self.child_nodes:
+            if child_node.n == 0:
+                return child_node
+
+        t = 0
+        for c in self.child_nodes:
+            t += c.n
+        ucb1_values = []
+        for child_node in self.child_nodes:
+            ucb1_values.append(child_node.w/child_node.n+(2*np.log(t)/child_node.n)**0.5)
+
+        return self.child_nodes[np.argmax(ucb1_values)]
+
+def mcts_action(board,player):
+    root_node = Node(board,player)
+    root_node.expand()
+
+    for _ in range(1000):
+        root_node.evaluate()
+
+    moves = board.valid_moves()
+    n_list = []
+    for c in root_node.child_nodes:
+        n_list.append(c.n)
+    return moves[np.argmax(n_list)]
+
+class MctsPlayer:
+    def __init__(self,player):
+        self.player = player
 
     def play(self,board):
-        moves = board.valid_moves()
-
-        for idx in moves:
-            board.move(idx)
-            if board.is_win(self.player):
-                return idx
-            #unmove
-            board.unmove(idx)
-
-        for idx in moves:
-            board.counter += 1
-            board.move(idx)
-            if board.is_win(self.opp):
-                board.unmove(idx)
-                board.counter -= 1
-                board.move(idx)
-                return idx
-            board.unmove(idx)
-            board.counter -= 1
-
-        for idx in moves:
-            board.move(idx)
-            moves2 = board.valid_moves()
-            lose = False
-            for idx2 in moves2:
-                board.move(idx2)
-                if board.is_win(self.opp):
-                    lose = True
-                board.unmove(idx2)
-            if lose:
-                moves.remove(idx)
-            board.unmove(idx)
-            if moves == []:
-              break
-
-        if moves == []:
-            idx = np.random.choice(moves_copy)
-        else:
-            idx = np.random.choice(moves)
+        idx = mcts_action(board,self.player)
+        print("モンテカルロ木プレイヤー：", idx)
         board.move(idx)
         return idx
 
 class GameManager:
     def __init__(self):
         self.board = None
-        self.better_player = BetterPlayer(1)
+        self.better_player = MctsPlayer(1)
         self.game_running = False
         self.start()
 
@@ -222,8 +273,8 @@ class GameManager:
             return
 
         #AI Turn
-        self.game_running = False
         display_message("AIの番 (考え中...)")
+        self.game_running = False
         ai_idx = self.better_player.play(self.board)
         update_cells(self.board.state)
 
