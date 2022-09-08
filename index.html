@@ -213,7 +213,7 @@ def mcts_action(board,player):
     root_node = Node(board,player)
     root_node.expand()
 
-    for _ in range(1000):
+    for _ in range(2000):
         root_node.evaluate()
 
     moves = board.valid_moves()
